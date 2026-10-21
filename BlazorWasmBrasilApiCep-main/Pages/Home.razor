@@ -1,0 +1,102 @@
+﻿@page "/"
+@using System.Net
+@using BlazorWasmBrasilApiCep.Models
+@inject HttpClient Http
+
+<PageTitle>Consulta CEP - BrasilAPI</PageTitle>
+
+<h1>Consulta de CEP com Blazor WebAssembly</h1>
+
+<div class="row mb-3">
+    <div class="col-md-4">
+        <label for="cepInput" class="form-label">Digite o CEP:</label>
+        <input id="cepInput" class="form-control" @bind="cepDigitado" @bind:event="oninput"
+               @onkeydown="AoPressionarTecla" placeholder="Ex: 01001000" maxlength="9" />
+    </div>
+    <div class="col-md-2 d-flex align-items-end">
+        <button class="btn btn-primary w-100" @onclick="ConsultarCep" disabled="@carregando">
+            @(carregando ? "Buscando..." : "Consultar")
+        </button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(mensagemErro))
+{
+    <div class="alert alert-danger">@mensagemErro</div>
+}
+
+@if (endereco is not null)
+{
+    <div class="card">
+        <div class="card-body">
+            <h4 class="card-title text-success">Endereço Encontrado</h4>
+            <p><strong>CEP:</strong> @endereco.cep</p>
+            <p><strong>Logradouro:</strong> @endereco.street</p>
+            <p><strong>Bairro:</strong> @endereco.neighborhood</p>
+            <p><strong>Cidade:</strong> @endereco.city (@endereco.state)</p>
+            <p><strong>Serviço:</strong> @endereco.service</p>
+
+            @if (endereco.ibge is not null)
+            {
+                <hr />
+                <h5 class="text-muted">Dados do IBGE</h5>
+                <p><strong>Cidade IBGE:</strong> @endereco.ibge.city</p>
+                <p><strong>Estado IBGE:</strong> @endereco.ibge.state</p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private string cepDigitado = string.Empty;
+    private Cep? endereco;
+    private string? mensagemErro;
+    private bool carregando;
+
+    private async Task ConsultarCep()
+    {
+        endereco = null;
+        mensagemErro = null;
+
+        // Aceita "30130-000" ou "30130000": mantém só os dígitos.
+        var cepLimpo = new string(cepDigitado.Where(char.IsDigit).ToArray());
+
+        if (cepLimpo.Length != 8)
+        {
+            mensagemErro = "Informe um CEP válido com 8 dígitos.";
+            return;
+        }
+
+        carregando = true;
+
+        try
+        {
+            var resposta = await Http.GetAsync($"api/cep/v1/{cepLimpo}");
+
+            if (resposta.StatusCode == HttpStatusCode.NotFound)
+            {
+                mensagemErro = $"CEP {cepLimpo} não encontrado.";
+                return;
+            }
+
+            resposta.EnsureSuccessStatusCode();
+            endereco = await resposta.Content.ReadFromJsonAsync<Cep>();
+        }
+        catch (HttpRequestException ex)
+        {
+            mensagemErro = $"Erro ao acessar a BrasilAPI: {ex.Message}";
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    private async Task AoPressionarTecla(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !carregando)
+        {
+            await ConsultarCep();
+        }
+    }
+}
